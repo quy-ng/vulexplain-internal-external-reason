@@ -21,3 +21,4 @@ dependencies:
     - wandb
     - torch_geometric
     - torchmetrics
+    - accelerate
