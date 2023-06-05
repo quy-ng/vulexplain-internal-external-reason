@@ -19,3 +19,5 @@ dependencies:
     - transformers
     - pytorch-lightning
     - wandb
+    - torch_geometric
+    - torchmetrics
