@@ -9,8 +9,10 @@ dependencies:
   - matplotlib
   - pip
   - jupyterlab
+  - ipywidgets
   - scipy
   - scikit-learn
+  - panel
   - pip:
     - click
     - torch 
