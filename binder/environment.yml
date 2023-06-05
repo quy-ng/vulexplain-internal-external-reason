@@ -1,0 +1,21 @@
+name: vul-intext-reason
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - pip
+  - jupyterlab
+  - scipy
+  - scikit-learn
+  - pip:
+    - click
+    - torch 
+    - torchvision 
+    - torchaudio
+    - transformers
+    - pytorch-lightning
+    - wandb
