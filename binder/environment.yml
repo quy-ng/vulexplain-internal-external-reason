@@ -13,7 +13,6 @@ dependencies:
   - scipy
   - scikit-learn
   - panel
-  - jupyterlab-git
   - pip:
     - click
     - torch 
