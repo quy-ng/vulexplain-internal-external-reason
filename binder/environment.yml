@@ -13,6 +13,7 @@ dependencies:
   - scipy
   - scikit-learn
   - panel
+  - jupyterlab-git
   - pip:
     - click
     - torch 
@@ -24,3 +25,5 @@ dependencies:
     - torch_geometric
     - torchmetrics
     - accelerate
+    - rouge
+    - datasets
