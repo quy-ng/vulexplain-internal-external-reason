@@ -13,12 +13,13 @@ dependencies:
   - scipy
   - scikit-learn
   - panel
+  - nodejs
   - pip:
     - click
     - torch 
     - torchvision 
     - torchaudio
-    - transformers
+    - transformers[sentencepiece]
     - pytorch-lightning
     - wandb
     - torch_geometric
@@ -26,3 +27,6 @@ dependencies:
     - accelerate
     - rouge
     - datasets
+    - evaluate
+    - nltk
+    - rouge_score
