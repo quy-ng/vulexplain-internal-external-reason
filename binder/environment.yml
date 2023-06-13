@@ -30,3 +30,5 @@ dependencies:
     - evaluate
     - nltk
     - rouge_score
+    - lightning-transformers
+    - tensorboardX
