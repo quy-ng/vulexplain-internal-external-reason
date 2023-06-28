@@ -32,3 +32,4 @@ dependencies:
     - rouge_score
     - lightning-transformers
     - tensorboardX
+    - captum
