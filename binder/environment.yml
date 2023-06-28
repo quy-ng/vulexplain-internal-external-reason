@@ -1,0 +1,35 @@
+name: vul-intext-reason
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - pip
+  - jupyterlab
+  - ipywidgets
+  - scipy
+  - scikit-learn
+  - panel
+  - nodejs
+  - pip:
+    - click
+    - torch 
+    - torchvision 
+    - torchaudio
+    - transformers[sentencepiece]
+    - pytorch-lightning
+    - wandb
+    - torch_geometric
+    - torchmetrics
+    - accelerate
+    - rouge
+    - datasets
+    - evaluate
+    - nltk
+    - rouge_score
+    - lightning-transformers
+    - tensorboardX
+    - captum
