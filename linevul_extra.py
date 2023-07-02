@@ -37,3 +37,30 @@ def extract_line_attention(attentions, all_tokens):
             score_sum = 0
             line_idx += 1
     return sorted(lines_with_score, key=lambda x: x[2], reverse=True), line_idx
+
+def linevul_predict(model, dataloader, threshold=0.5):
+    model.eval()
+    logits=[]  
+    y_trues=[]
+    for batch in test_dataloader:
+        (inputs_ids, labels) = [x.to(args.device) for x in batch]
+        with torch.no_grad():
+            lm_loss, logit = model(input_ids=inputs_ids, labels=labels)
+            logits.append(logit.cpu().numpy())
+            y_trues.append(labels.cpu().numpy())
+    # calculate scores
+    logits = np.concatenate(logits, 0)
+    y_trues = np.concatenate(y_trues, 0)
+    y_preds = logits[:, 1] > threshold
+    acc = accuracy_score(y_trues, y_preds)
+    recall = recall_score(y_trues, y_preds)
+    precision = precision_score(y_trues, y_preds)   
+    f1 = f1_score(y_trues, y_preds)             
+    result = {
+        "test_accuracy": float(acc),
+        "test_recall": float(recall),
+        "test_precision": float(precision),
+        "test_f1": float(f1),
+        "test_threshold":threshold,
+    }
+    return result, y_trues, y_preds
