@@ -65,3 +65,22 @@ class TextDataset(Dataset):
 
     def __getitem__(self, i):       
         return torch.tensor(self.examples[i].input_ids),torch.tensor(self.examples[i].label)
+
+def clean_special_token_values(all_values, padding=False):
+    # special token in the beginning of the seq 
+    all_values[0] = 0
+    if padding:
+        # get the last non-zero value which represents the att score for </s> token
+        idx = [index for index, item in enumerate(all_values) if item != 0][-1]
+        all_values[idx] = 0
+    else:
+        # special token in the end of the seq 
+        all_values[-1] = 0
+    return all_values
+    
+def get_word_att_scores(all_tokens: list, att_scores: list) -> list:
+    word_att_scores = []
+    for i in range(len(all_tokens)):
+        token, att_score = all_tokens[i], att_scores[i]
+        word_att_scores.append([token, att_score])
+    return word_att_scores
