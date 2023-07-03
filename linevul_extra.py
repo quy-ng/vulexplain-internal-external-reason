@@ -25,21 +25,23 @@ def extract_line_attention(attentions, all_tokens):
 
     # go through each line
     separator = ["Ċ", " Ċ", "ĊĊ", " ĊĊ"]
+    ignore_tokens = ['<pad>', '<s>' , '</s>']
     score_sum = 0
     line = ""
     score_sum = 0
     lines_with_score = []  # line_idx, content, score
     line_idx = 0
     for i in range(len(word_att_scores)):
-        score_sum += word_att_scores[i][1]
-        if word_att_scores[i][0] not in separator:
-            line += word_att_scores[i][0]
-        else:
-            lines_with_score.append((line_idx, line, score_sum.detach().item()))
+        if word_att_scores[i][0] not in ignore_tokens:
+            score_sum += word_att_scores[i][1].detach().item()
+        if ((word_att_scores[i][0] in separator) or (i == (len(word_att_scores) - 1))) and score_sum > 0:
+            lines_with_score.append((line_idx, line, score_sum))
             line = ""
             score_sum = 0
             line_idx += 1
-    return sorted(lines_with_score, key=lambda x: x[2], reverse=True), line_idx
+        elif (word_att_scores[i][0] not in separator) and word_att_scores[i][0] not in ignore_tokens:
+            line += word_att_scores[i][0]
+    return sorted(lines_with_score, key=lambda x: x[2], reverse=True), line_idx  # last line_idx mean total lines
 
 def linevul_predict(model, dataloader, device, threshold=0.5):
     model.eval()
