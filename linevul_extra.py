@@ -1,3 +1,6 @@
+import torch
+import numpy as np
+from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 from linevul_helpers import clean_special_token_values, get_word_att_scores
 
 def extract_line_attention(attentions, all_tokens):
@@ -38,12 +41,12 @@ def extract_line_attention(attentions, all_tokens):
             line_idx += 1
     return sorted(lines_with_score, key=lambda x: x[2], reverse=True), line_idx
 
-def linevul_predict(model, dataloader, threshold=0.5):
+def linevul_predict(model, dataloader, device, threshold=0.5):
     model.eval()
     logits=[]  
     y_trues=[]
-    for batch in test_dataloader:
-        (inputs_ids, labels) = [x.to(args.device) for x in batch]
+    for batch in dataloader:
+        (inputs_ids, labels) = [x.to(device) for x in batch]
         with torch.no_grad():
             lm_loss, logit = model(input_ids=inputs_ids, labels=labels)
             logits.append(logit.cpu().numpy())
