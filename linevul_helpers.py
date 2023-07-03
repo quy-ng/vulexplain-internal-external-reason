@@ -51,7 +51,7 @@ class TextDataset(Dataset):
         df = pd.read_csv(file_path)
         funcs = df["processed_func"].tolist()
         labels = df["target"].tolist()
-        for i in tqdm(range(len(funcs))):
+        for i in tqdm(range(len(funcs)), desc="Convert example to features"):
             self.examples.append(convert_examples_to_features(funcs[i], labels[i], tokenizer, args))
         if file_type == "train":
             for example in self.examples[:3]:
