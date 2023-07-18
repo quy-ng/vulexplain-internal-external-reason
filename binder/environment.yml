@@ -33,3 +33,4 @@ dependencies:
     - lightning-transformers
     - tensorboardX
     - captum
+    - accelerate
