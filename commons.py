@@ -1,4 +1,4 @@
-from tqdm.autonotebook import tqdm
+from tqdm.auto import tqdm
 from multiprocessing import Pool
 import pandas as pd
 import subprocess
