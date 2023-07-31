@@ -37,3 +37,7 @@ def format_code(cpp_code):
     """
     preprocessed_code = subprocess.check_output(['clang-format', '-style=Google'], input=cpp_code, universal_newlines=True)
     return preprocessed_code
+
+
+def clean_generated_str(input):
+    return  ' '.join([i.replace(" ", "") for i in input.split('  ') if i != ''])
