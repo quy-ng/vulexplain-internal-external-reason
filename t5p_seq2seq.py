@@ -1,4 +1,3 @@
-import sys
 import os
 import click
 import numpy as np
@@ -35,14 +34,17 @@ def preprocess_logits_for_metrics(logits, labels):
 
 @click.command()
 @click.option('-t', '--task_name', prompt='task name', type=click.Choice(task_list))
-@click.option('--prexfix', prompt='prexfix for task', default='t5p_script') 
+@click.option('--prexfix', default='t5p_script') 
 @click.option('-w', '--size_weight', prompt='size of weight', type=click.Choice(['220', '770']))  # Choice must be string
-@click.option('-s', '--save_dir', prompt='save directory', default='results')
+@click.option('-s', '--save_dir', default='results')
 @click.option('--train_fp16/--no-train_fp16', prompt='train with fp16', default=True)
-@click.option('--nepoch', prompt='number of epochs', default=11)
+@click.option('--nepoch', default=11)
 @click.option('-b', '--batch', prompt='batch size', default=5)
-@click.option('--ncpus', prompt='cpu workers', default=4)
+@click.option('--ncpus', default=4)
 def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus):
+
+    os.environ["WANDB_PROJECT"] = f"codet5p-{size_weight}m-{task_name}-{prexfix}"
+    os.environ["WANDB_LOG_MODEL"] = "all"
     
     @dataclass
     class Args:
