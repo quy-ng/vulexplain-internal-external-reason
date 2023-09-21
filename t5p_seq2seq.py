@@ -142,7 +142,7 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
         logging_strategy="steps",
         logging_steps=50,
         auto_find_batch_size=True,
-        num_beams=args.num_beams
+        generation_num_beams=args.num_beams
     )
 
     trainer = Trainer(
