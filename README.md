@@ -21,3 +21,7 @@ conda env update --file binder/environment.yml --prune
 ```console
 conda env export --from-history -f binder/environment.yml
 ```
+
+
+## Encounter issue with GLIBCXX not found
+Firstly, `find / -name "libstdc++.so*"` and create a symbolic link properly
