@@ -41,7 +41,8 @@ def preprocess_logits_for_metrics(logits, labels):
 @click.option('--nepoch', default=11)
 @click.option('-b', '--batch', prompt='batch size', default=5)
 @click.option('--ncpus', default=4)
-def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus):
+@click.option('--beam_size', default=5)
+def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus, beam_size):
 
     os.environ["WANDB_PROJECT"] = f"codet5p-{size_weight}m-{task_name}-{prexfix}"
     os.environ["WANDB_LOG_MODEL"] = "all"
@@ -62,6 +63,7 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
         lr_warmup_steps = 200
         weight_decay = 0.05
         task = task_name
+        num_beams = beam_size
     
     args = Args()
 
@@ -139,7 +141,8 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
         fp16=args.fp16,
         logging_strategy="steps",
         logging_steps=50,
-        auto_find_batch_size=True
+        auto_find_batch_size=True,
+        num_beams=args.num_beams
     )
 
     trainer = Trainer(
