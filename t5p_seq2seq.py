@@ -136,7 +136,7 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         warmup_steps=args.lr_warmup_steps,
-        save_total_limit=3,
+        save_total_limit=2,
         dataloader_num_workers=args.num_proc,
         fp16=args.fp16,
         logging_strategy="steps",
