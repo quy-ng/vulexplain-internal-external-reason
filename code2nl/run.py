@@ -22,7 +22,8 @@ using a masked language modeling (MLM) loss.
 from __future__ import absolute_import
 import os
 import sys
-from code2nl.bleu import bleu
+import bleu
+import evaluate
 import pickle
 import torch
 import json
@@ -33,7 +34,7 @@ import numpy as np
 from io import open
 from itertools import cycle
 import torch.nn as nn
-from code2nl.model import Seq2Seq
+from model import Seq2Seq
 from tqdm import tqdm, trange
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 from torch.utils.data.distributed import DistributedSampler
@@ -56,6 +57,19 @@ class Example(object):
         self.idx = idx
         self.source = source
         self.target = target
+
+max_des_length_configs = {
+    'attack_vector': 146,
+    'root_cause': 153,
+    'impact': 167,
+    'vulnerability_type': 53
+}
+
+rouge_metric = evaluate.load("rouge")
+
+def compute_metrics(preds, labels):
+    result = rouge_metric.compute(predictions=preds, references=labels)
+    return result
 
 def read_examples(filename):
     """Read examples from filename."""
@@ -159,7 +173,9 @@ def set_seed(seed=42):
 def main():
     parser = argparse.ArgumentParser()
 
-    ## Required parameters  
+    ## Required parameters
+    parser.add_argument("--task", default=None, type=str, required=True,
+                        help="task: e.g. root_cause")
     parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="Model type: e.g. roberta")
     parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
@@ -180,12 +196,12 @@ def main():
                         help="Pretrained config name or path if not the same as model_name")
     parser.add_argument("--tokenizer_name", default="", type=str,
                         help="Pretrained tokenizer name or path if not the same as model_name") 
-    parser.add_argument("--max_source_length", default=64, type=int,
-                        help="The maximum total source sequence length after tokenization. Sequences longer "
-                             "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--max_target_length", default=32, type=int,
-                        help="The maximum total target sequence length after tokenization. Sequences longer "
-                             "than this will be truncated, sequences shorter will be padded.")
+    # parser.add_argument("--max_source_length", default=64, type=int,
+    #                     help="The maximum total source sequence length after tokenization. Sequences longer "
+    #                          "than this will be truncated, sequences shorter will be padded.")
+    # parser.add_argument("--max_target_length", default=32, type=int,
+    #                     help="The maximum total target sequence length after tokenization. Sequences longer "
+    #                          "than this will be truncated, sequences shorter will be padded.")
     
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
@@ -232,6 +248,8 @@ def main():
                         help="number of decoder layers")
     # print arguments
     args = parser.parse_args()
+    args.max_source_length = 512 # as BERT only cosumes 512
+    args.max_target_length = max_des_length_configs[args.task]
     logger.info(args)
 
     # Setup CUDA, GPU & distributed training
@@ -500,11 +518,18 @@ def main():
                         p.append(text)
             model.train()
             predictions=[]
-            with open(os.path.join(args.output_dir,"test_{}.output".format(str(idx))),'w') as f, open(os.path.join(args.output_dir,"test_{}.gold".format(str(idx))),'w') as f1:
+            rouge_pred, rouge_gold = [], []
+            with open(os.path.join(args.output_dir,"test_{}.output".format(str(idx))),'w') as f, \
+                    open(os.path.join(args.output_dir,"test_{}.gold".format(str(idx))),'w') as f1, \
+                    open(os.path.join(args.output_dir,"result_{}.output".format(str(idx))),'w', encoding='utf-8') as f2:
                 for ref,gold in zip(p,eval_examples):
                     predictions.append(str(gold.idx)+'\t'+ref)
                     f.write(str(gold.idx)+'\t'+ref+'\n')
-                    f1.write(str(gold.idx)+'\t'+gold.target+'\n')     
+                    f1.write(str(gold.idx)+'\t'+gold.target+'\n')
+                    rouge_pred.append(ref)
+                    rouge_gold.append(gold.target)
+                matrix = compute_metrics(rouge_pred, rouge_gold)
+                f2.write(str(matrix))
 
             (goldMap, predictionMap) = bleu.computeMaps(predictions, os.path.join(args.output_dir, "test_{}.gold".format(idx))) 
             dev_bleu=round(bleu.bleuFromMaps(goldMap, predictionMap)[0],2)
