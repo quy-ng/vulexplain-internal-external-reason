@@ -24,7 +24,7 @@ do
         --train_batch_size  40 \
         --eval_batch_size 10 \
         --learning_rate "5e-5" \
-        --num_train_epochs 100 \
+        --num_train_epochs 65 \
         --num_decoder_layers 12
 
 done
