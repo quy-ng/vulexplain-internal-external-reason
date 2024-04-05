@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-# docker build --build-arg MAMBA_USER_ID=$(id -u) --build-arg MAMBA_USER_GID=$(id -g)  -t vul-intext-reason:ase .
+docker build --build-arg MAMBA_USER_ID=$(id -u) --build-arg MAMBA_USER_GID=$(id -g)  -t vul-intext-reason:ase .
 docker run --gpus all \
     --env-file .env \
     -it -d -v $PWD:/workspace \
