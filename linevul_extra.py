@@ -48,11 +48,11 @@ def linevul_predict(model, dataloader, device, threshold=0.5):
     logits=[]  
     y_trues=[]
     for batch in dataloader:
-        (inputs_ids, label) = [x.to(device) for x in batch]
+        (inputs_ids, labels) = [x.to(device) for x in batch]
         with torch.no_grad():
-            lm_loss, logit = model(input_ids=inputs_ids)
+            lm_loss, logit = model(input_ids=inputs_ids, labels=labels)
             logits.append(logit.cpu().numpy())
-            y_trues.append(label.cpu().numpy())
+            y_trues.append(labels.cpu().numpy())
     # calculate scores
     logits = np.concatenate(logits, 0)
     y_trues = np.concatenate(y_trues, 0)
