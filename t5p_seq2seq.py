@@ -42,19 +42,21 @@ def preprocess_logits_for_metrics(logits, labels):
 @click.option('-b', '--batch', prompt='batch size', default=5)
 @click.option('--ncpus', default=4)
 @click.option('--beam_size', default=5)
-def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus, beam_size):
+@click.option('--linevul_kline', default=10)
+def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus, beam_size, linevul_kline):
 
     os.environ["WANDB_PROJECT"] = f"codet5p-{size_weight}m-{task_name}-{prexfix}"
     os.environ["WANDB_LOG_MODEL"] = "all"
     
     @dataclass
     class Args:
+        linevul_top = linevul_kline  # if linevul_top <= 0, meaning ignore linevul ranking
         model_name = f"Salesforce/codet5p-{size_weight}m"
         num_proc = ncpus
         batch_size = batch
         max_src_length = max_src_length_configs[task_name]
         max_des_length = max_des_length_configs[task_name]
-        data_cols = ["CVE ID", "explain", "func_before", "processed_func"]
+        data_cols = ["CVE ID", "explain", "func_before", "processed_func", "linevul_ranking"]
         output_dir = f'{save_dir}/{task_name}/{prexfix}_{size_weight}m'
         epochs = nepoch
         grad_acc_steps = 5
@@ -73,9 +75,21 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
 
 
     def preprocess_function(samples):
-        source = samples["func_before"]
+        source = samples["processed_func"]
         target = samples["explain"]
-        input_feature = codet5p_tokenizer(source, max_length=args.max_src_length, padding="max_length", truncation=True)
+        if args.linevul_top <= 0:
+            input_feature = codet5p_tokenizer(source, max_length=args.max_src_length, padding="max_length", truncation=True)
+        else:
+            # use Linevul ranking and selecet linevul_top
+            linevul_ranking = samples["linevul_ranking"]
+            new_source = []
+            for i, v in enumerate(source):
+                ranking = linevul_ranking[i]
+                breaked_lines = v.split('\n')
+                new_sample = '\n'.join([breaked_lines[i] for i in ranking[:args.linevul_top]]).strip()
+                new_source.append(new_sample)
+            input_feature = codet5p_tokenizer(new_source, max_length=args.max_src_length, padding="max_length", truncation=True)
+
         labels = codet5p_tokenizer(target, max_length=args.max_des_length, padding="max_length", truncation=True)
         lables = labels["input_ids"].copy()
         lables = np.where(lables != codet5p_tokenizer.pad_token_id, lables, -100)
