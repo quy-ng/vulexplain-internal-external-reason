@@ -71,7 +71,7 @@ def compute_metrics(preds, labels):
     result = rouge_metric.compute(predictions=preds, references=labels)
     return result
 
-def read_examples(filename):
+def read_examples(filename, linevul_kline):
     """Read examples from filename."""
     examples=[]
     with open(filename,encoding="utf-8") as f:
@@ -80,10 +80,24 @@ def read_examples(filename):
             js=json.loads(line)
             if 'idx' not in js:
                 js['idx']=idx
-            code=' '.join(js['code_tokens']).replace('\n',' ')
-            code=' '.join(code.strip().split())
-            nl=' '.join(js['docstring_tokens']).replace('\n','')
-            nl=' '.join(nl.strip().split())            
+            if linevul_kline <= 0:
+                code = js['func_before'].split()
+                code = ' '.join(code).replace('\n',' ')
+                code = ' '.join(code.strip().split())
+            else:
+                linevul_ranking = js["linevul_ranking"][:linevul_kline]
+                source = js["processed_func"]
+                breaked_lines = source.split('\n')
+                new_source = []
+                for i in linevul_ranking:
+                    new_sample = breaked_lines[i].strip()
+                    new_source.append(new_sample)
+                
+                code = ' '.join(new_source)
+
+            nl = js['explain'].split()
+            nl = ' '.join(nl).replace('\n','')
+            nl = ' '.join(nl.strip().split())
             examples.append(
                 Example(
                         idx = idx,
@@ -196,12 +210,6 @@ def main():
                         help="Pretrained config name or path if not the same as model_name")
     parser.add_argument("--tokenizer_name", default="", type=str,
                         help="Pretrained tokenizer name or path if not the same as model_name") 
-    # parser.add_argument("--max_source_length", default=64, type=int,
-    #                     help="The maximum total source sequence length after tokenization. Sequences longer "
-    #                          "than this will be truncated, sequences shorter will be padded.")
-    # parser.add_argument("--max_target_length", default=32, type=int,
-    #                     help="The maximum total target sequence length after tokenization. Sequences longer "
-    #                          "than this will be truncated, sequences shorter will be padded.")
     
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
@@ -246,6 +254,9 @@ def main():
                         help="random seed for initialization")
     parser.add_argument('--num_decoder_layers', type=int, default=6,
                         help="number of decoder layers")
+    parser.add_argument('--linevul_kline', type=int, default=10,
+                        help="LineVul ranking")
+
     # print arguments
     args = parser.parse_args()
     args.max_source_length = 512 # as BERT only cosumes 512
@@ -300,7 +311,7 @@ def main():
 
     if args.do_train:
         # Prepare training data loader
-        train_examples = read_examples(args.train_filename)
+        train_examples = read_examples(args.train_filename, args.linevul_kline)
         train_features = convert_examples_to_features(train_examples, tokenizer,args,stage='train')
         all_source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
         all_source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)
@@ -372,7 +383,7 @@ def main():
                 if 'dev_loss' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_loss']
                 else:
-                    eval_examples = read_examples(args.dev_filename)
+                    eval_examples = read_examples(args.dev_filename, args.linevul_kline)
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='dev')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
                     all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
@@ -433,7 +444,7 @@ def main():
                 if 'dev_bleu' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_bleu']
                 else:
-                    eval_examples = read_examples(args.dev_filename)
+                    eval_examples = read_examples(args.dev_filename, args.linevul_kline)
                     eval_examples = random.sample(eval_examples,min(1000,len(eval_examples)))
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
@@ -492,7 +503,7 @@ def main():
             files.append(args.test_filename)
         for idx,file in enumerate(files):   
             logger.info("Test file: {}".format(file))
-            eval_examples = read_examples(file)
+            eval_examples = read_examples(file, args.linevul_kline)
             eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
             all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
             all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)    
