@@ -14,7 +14,7 @@ do
         --do_eval \
         --do_test \
         --train_filename "tmp_data_new_v1/$TASK/train.jsonl" \
-        --dev_filename "tmp_data_new_v1/$TASK/valid.jsonl" \
+        --dev_filename "tmp_data_new_v1/$TASK/validation.jsonl" \
         --test_filename "tmp_data_new_v1/$TASK/test.jsonl" \
         --do_lower_case \
         --model_type roberta \
