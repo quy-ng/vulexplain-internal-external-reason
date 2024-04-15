@@ -88,6 +88,48 @@ def read_examples(filename):
             )
     return examples
 
+def read_examples_new(filename, linevul_kline=0):
+    """Read examples from filename."""
+    examples=[]
+    with open(filename,encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            line=line.strip()
+            js=json.loads(line)
+            if 'idx' not in js:
+                js['idx']=idx
+            
+            contents = js['func_before'].split()
+            contents = ' '.join(contents).replace('\n',' ')
+            contents = ' '.join(contents.strip().split())
+
+            nl = js['explain'].split()
+            nl = ' '.join(nl).replace('\n','')
+            nl = ' '.join(nl.strip().split())  
+
+            if linevul_kline<=0:
+                code = js['func_before'].split()
+                code=' '.join(code).replace('\n',' ')
+                code=' '.join(code.strip().split())
+            else:
+                linevul_ranking = js["linevul_ranking"][:linevul_kline]
+                source = js["processed_func"]
+                breaked_lines = source.split('\n')
+                new_source = []
+                for i in linevul_ranking:
+                    new_sample = breaked_lines[i].strip()
+                    new_source.append(new_sample)
+                code = ' '.join(new_source)
+
+            examples.append(
+                Example(
+                        idx = idx,
+                        source=contents,
+                        source_2=code, # this will goes to codebert
+                        target = nl,
+                        ) 
+            )
+    return examples
+
 
 class InputFeatures(object):
     """A single training/test features for a example."""
@@ -285,7 +327,7 @@ def main():
     
     #budild model
     encoder = model_class.from_pretrained(args.model_name_or_path,config=config)    
-    decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
+    # decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
     # decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
     bart_config = BartConfig.from_pretrained("facebook/bart-base")
     bart_pretrain = BartForConditionalGeneration.from_pretrained("facebook/bart-base", config=bart_config)
@@ -337,7 +379,7 @@ def main():
             return result
 
         # Prepare training data loader
-        train_examples = read_examples(args.train_filename)
+        train_examples = read_examples_new(args.train_filename, args.linevul_kline)
         train_features = convert_examples_to_features(train_examples, tokenizer,args,stage='train')
         all_source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
         all_source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)
@@ -415,7 +457,7 @@ def main():
                 if 'dev_loss' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_loss']
                 else:
-                    eval_examples = read_examples(args.dev_filename)
+                    eval_examples = read_examples_new(args.dev_filename, args.linevul_kline)
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='dev')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
                     all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
@@ -485,7 +527,7 @@ def main():
                 if 'dev_bleu' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_bleu']
                 else:
-                    eval_examples = read_examples(args.dev_filename)
+                    eval_examples = read_examples_new(args.dev_filename, args.linevul_kline)
                     eval_examples = random.sample(eval_examples,min(1000,len(eval_examples)))
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
@@ -559,7 +601,7 @@ def main():
             files.append(args.test_filename)
         for idx,file in enumerate(files):   
             logger.info("Test file: {}".format(file))
-            eval_examples = read_examples(file)
+            eval_examples = read_examples_new(file, args.linevul_kline)
             eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
             all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
             all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
