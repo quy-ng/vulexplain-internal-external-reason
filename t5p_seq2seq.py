@@ -43,9 +43,10 @@ def preprocess_logits_for_metrics(logits, labels):
 @click.option('--ncpus', default=4)
 @click.option('--beam_size', default=5)
 @click.option('--linevul_kline', default=10)
-def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus, beam_size, linevul_kline):
+@click.option('--percent/--no-percent', default=False)
+def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, ncpus, beam_size, linevul_kline, percent):
 
-    os.environ["WANDB_PROJECT"] = f"codet5p-{size_weight}m-{task_name}-{prexfix}"
+    os.environ["WANDB_PROJECT"] = f"codet5p-{size_weight}m-{task_name}-{prexfix}-{percent}"
     os.environ["WANDB_LOG_MODEL"] = "all"
     
     @dataclass
@@ -77,7 +78,7 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
     def preprocess_function(samples):
         source = samples["processed_func"]
         target = samples["explain"]
-        if args.linevul_top <= 0:
+        if args.linevul_top <= 0 or args.linevul_top >= 100:
             input_feature = codet5p_tokenizer(source, max_length=args.max_src_length, padding="max_length", truncation=True)
         else:
             # use Linevul ranking and selecet linevul_top
@@ -86,7 +87,11 @@ def main(prexfix, task_name, size_weight, save_dir, train_fp16, nepoch, batch, n
             for i, v in enumerate(source):
                 ranking = linevul_ranking[i]
                 breaked_lines = v.split('\n')
-                new_sample = '\n'.join([breaked_lines[i] for i in ranking[:args.linevul_top]]).strip()
+                if percent is False: # using line instead of percent
+                    new_sample = '\n'.join([breaked_lines[i] for i in ranking[:args.linevul_top]]).strip()
+                else:
+                    new_klines = max(int(len(breaked_lines) * args.linevul_top / 100), 1)
+                    new_sample = '\n'.join([breaked_lines[i] for i in ranking[:new_klines]]).strip()
                 new_source.append(new_sample)
             input_feature = codet5p_tokenizer(new_source, max_length=args.max_src_length, padding="max_length", truncation=True)
 

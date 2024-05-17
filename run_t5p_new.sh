@@ -10,4 +10,5 @@ for TASK in "${TASKS[@]}"
 do
   echo "Running task $TASK"
   python $PYTHON_SCRIPT_PATH -t $TASK -b 50 -w 220 --train_fp16 --prexfix "new_v1"
+  python $PYTHON_SCRIPT_PATH -t $TASK -b 50 -w 220 --train_fp16 --prexfix "new_v1_5linevul" --linevul_kline 5
 done

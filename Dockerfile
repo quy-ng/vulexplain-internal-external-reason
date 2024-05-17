@@ -38,6 +38,8 @@ WORKDIR /tmp
 COPY binder/environment.yml environment.yml
 RUN micromamba create -n $ENV_NAME -f environment.yml -y \
     && micromamba clean --all --yes
+COPY binder/postBuild.sh postBuild.sh
+RUN bash postBuild.sh
 
 WORKDIR /workspace
 ENV SHELL=/bin/bash
