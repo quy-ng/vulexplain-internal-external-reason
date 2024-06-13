@@ -33,6 +33,7 @@ Firstly, `find / -name "libstdc++.so*"` and create a symbolic link properly
 # Pre-processing data
 - Merge BigVul and VKA: `explore_data61.ipynb`
 - Apply LineVul: `apply_linevul_parse_data.ipynb`
+
 Final data can be download at https://drive.google.com/file/d/1ZxGaSg4L3lGq94SYgngjR_CnZtNpEvtc/view?usp=sharing , unzip and rename it to `.aspect_bigvul_new`
 
 # Run CodeT5+ k=10, k=5
