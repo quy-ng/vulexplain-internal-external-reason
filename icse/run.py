@@ -22,8 +22,7 @@ using a masked language modeling (MLM) loss.
 from __future__ import absolute_import
 import os
 import sys
-import bleu
-import evaluate
+import bleu as bleu
 import pickle
 import torch
 import json
@@ -39,7 +38,7 @@ from tqdm import tqdm, trange
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
-                          RobertaConfig, RobertaModel, RobertaTokenizer)
+                          RobertaConfig, RobertaModel, RobertaTokenizer, BartForConditionalGeneration, BartConfig)
 MODEL_CLASSES = {'roberta': (RobertaConfig, RobertaModel, RobertaTokenizer)}
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -47,31 +46,25 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
                     level = logging.INFO)
 logger = logging.getLogger(__name__)
 
+root = os.path.dirname(__file__)
+
+import nltk
+from datasets import load_metric
+
 class Example(object):
     """A single training/test example."""
     def __init__(self,
                  idx,
                  source,
                  target,
+                 source_2,
                  ):
         self.idx = idx
         self.source = source
         self.target = target
+        self.source_2 = source_2
 
-max_des_length_configs = {
-    'attack_vector': 146,
-    'root_cause': 153,
-    'impact': 167,
-    'vulnerability_type': 53
-}
-
-rouge_metric = evaluate.load("rouge")
-
-def compute_metrics(preds, labels):
-    result = rouge_metric.compute(predictions=preds, references=labels)
-    return result
-
-def read_examples(filename, linevul_kline):
+def read_examples(filename):
     """Read examples from filename."""
     examples=[]
     with open(filename,encoding="utf-8") as f:
@@ -80,10 +73,43 @@ def read_examples(filename, linevul_kline):
             js=json.loads(line)
             if 'idx' not in js:
                 js['idx']=idx
-            if linevul_kline <= 0:
+            contents = ' '.join(js['contents']).replace('\n',' ')
+            code=' '.join(js['code_tokens']).replace('\n',' ')
+            code=' '.join(code.strip().split())
+            nl=' '.join(js['docstring_tokens']).replace('\n','')
+            nl=' '.join(nl.strip().split())            
+            examples.append(
+                Example(
+                        idx = idx,
+                        source=contents,
+                        source_2=code,
+                        target = nl,
+                        ) 
+            )
+    return examples
+
+def read_examples_new(filename, linevul_kline=0):
+    """Read examples from filename."""
+    examples=[]
+    with open(filename,encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            line=line.strip()
+            js=json.loads(line)
+            if 'idx' not in js:
+                js['idx']=idx
+            
+            contents = js['func_before'].split()
+            contents = ' '.join(contents).replace('\n',' ')
+            contents = ' '.join(contents.strip().split())
+
+            nl = js['explain'].split()
+            nl = ' '.join(nl).replace('\n','')
+            nl = ' '.join(nl.strip().split())  
+
+            if linevul_kline<=0:
                 code = js['func_before'].split()
-                code = ' '.join(code).replace('\n',' ')
-                code = ' '.join(code.strip().split())
+                code=' '.join(code).replace('\n',' ')
+                code=' '.join(code.strip().split())
             else:
                 linevul_ranking = js["linevul_ranking"][:linevul_kline]
                 source = js["processed_func"]
@@ -92,16 +118,13 @@ def read_examples(filename, linevul_kline):
                 for i in linevul_ranking:
                     new_sample = breaked_lines[i].strip()
                     new_source.append(new_sample)
-                
                 code = ' '.join(new_source)
 
-            nl = js['explain'].split()
-            nl = ' '.join(nl).replace('\n','')
-            nl = ' '.join(nl.strip().split())
             examples.append(
                 Example(
                         idx = idx,
-                        source=code,
+                        source=contents,
+                        source_2=code, # this will goes to codebert
                         target = nl,
                         ) 
             )
@@ -113,15 +136,19 @@ class InputFeatures(object):
     def __init__(self,
                  example_id,
                  source_ids,
+                 source_ids_2,
                  target_ids,
                  source_mask,
+                 source_mask_2,
                  target_mask,
 
     ):
         self.example_id = example_id
         self.source_ids = source_ids
+        self.source_ids_2 = source_ids_2
         self.target_ids = target_ids
         self.source_mask = source_mask
+        self.source_mask_2 = source_mask_2
         self.target_mask = target_mask       
         
 
@@ -130,13 +157,21 @@ def convert_examples_to_features(examples, tokenizer, args,stage=None):
     features = []
     for example_index, example in enumerate(examples):
         #source
-        source_tokens = tokenizer.tokenize(example.source)[:args.max_source_length-2]
-        source_tokens =[tokenizer.cls_token]+source_tokens+[tokenizer.sep_token]
-        source_ids =  tokenizer.convert_tokens_to_ids(source_tokens) 
+        source_tokens = tokenizer.tokenize(example.source)[:args.max_source_length - 2]
+        source_tokens = [tokenizer.cls_token] + source_tokens + [tokenizer.sep_token]
+        source_ids = tokenizer.convert_tokens_to_ids(source_tokens)
         source_mask = [1] * (len(source_tokens))
         padding_length = args.max_source_length - len(source_ids)
-        source_ids+=[tokenizer.pad_token_id]*padding_length
-        source_mask+=[0]*padding_length
+        source_ids += [tokenizer.pad_token_id] * padding_length
+        source_mask += [0] * padding_length
+
+        source_tokens_2 = tokenizer.tokenize(example.source_2)[:512-2]
+        source_tokens_2 =[tokenizer.cls_token]+source_tokens_2+[tokenizer.sep_token]
+        source_ids_2 =  tokenizer.convert_tokens_to_ids(source_tokens_2)
+        source_mask_2 = [1] * (len(source_tokens_2))
+        padding_length = 512 - len(source_ids_2)
+        source_ids_2+=[tokenizer.pad_token_id]*padding_length
+        source_mask_2+=[0]*padding_length
  
         #target
         if stage=="test":
@@ -167,8 +202,10 @@ def convert_examples_to_features(examples, tokenizer, args,stage=None):
             InputFeatures(
                  example_index,
                  source_ids,
+                 source_ids_2,
                  target_ids,
                  source_mask,
+                 source_mask_2,
                  target_mask,
             )
         )
@@ -183,54 +220,61 @@ def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
-        
+
+train_dir = root + '/output/'
+
+
 def main():
     parser = argparse.ArgumentParser()
 
-    ## Required parameters
-    parser.add_argument("--task", default=None, type=str, required=True,
-                        help="task: e.g. root_cause")
-    parser.add_argument("--model_type", default=None, type=str, required=True,
+    ## Required parameters  
+    parser.add_argument("--model_type", default='roberta', type=str,
                         help="Model type: e.g. roberta")
-    parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
+    parser.add_argument("--model_name_or_path", default='microsoft/codebert-base', type=str,
                         help="Path to pre-trained model: e.g. roberta-base" )   
-    parser.add_argument("--output_dir", default=None, type=str, required=True,
+    parser.add_argument("--output_dir", default=root+'/output/github_cwe_code_class_codebert_mix_synk_nvd_generation_allhave_' + 'impact' + '_clean_seg'+'_c'+'_test_layer_long/', type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     parser.add_argument("--load_model_path", default=None, type=str, 
                         help="Path to trained model: Should contain the .bin files" )    
     ## Other parameters
-    parser.add_argument("--train_filename", default=None, type=str, 
+    parser.add_argument("--train_filename", default=train_dir+'github_cwe_code_class_train_codebert_mix_synk_nvd_generation_allhave_' + 'impact' + '_clean_seg'+'_c'+'.jsonl', type=str,
                         help="The train filename. Should contain the .jsonl files for this task.")
-    parser.add_argument("--dev_filename", default=None, type=str, 
+    parser.add_argument("--dev_filename", default=None, type=str,
                         help="The dev filename. Should contain the .jsonl files for this task.")
-    parser.add_argument("--test_filename", default=None, type=str, 
+    parser.add_argument("--test_filename", default=train_dir+'github_cwe_code_class_test_codebert_mix_synk_nvd_generation_allhave_' + 'impact' + '_clean_seg'+'_c'+'.jsonl', type=str,
                         help="The test filename. Should contain the .jsonl files for this task.")  
     
     parser.add_argument("--config_name", default="", type=str,
                         help="Pretrained config name or path if not the same as model_name")
     parser.add_argument("--tokenizer_name", default="", type=str,
                         help="Pretrained tokenizer name or path if not the same as model_name") 
+    parser.add_argument("--max_source_length", default=256, type=int,
+                        help="The maximum total source sequence length after tokenization. Sequences longer "
+                             "than this will be truncated, sequences shorter will be padded.")
+    parser.add_argument("--max_target_length", default=128, type=int,
+                        help="The maximum total target sequence length after tokenization. Sequences longer "
+                             "than this will be truncated, sequences shorter will be padded.")
     
-    parser.add_argument("--do_train", action='store_true',
+    parser.add_argument("--do_train", action='store_true', default=True,
                         help="Whether to run training.")
-    parser.add_argument("--do_eval", action='store_true',
+    parser.add_argument("--do_eval", action='store_true', default=True,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--do_test", action='store_true',
+    parser.add_argument("--do_test", action='store_true', default=False,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--do_lower_case", action='store_true',
+    parser.add_argument("--do_lower_case", action='store_true', default=True,
                         help="Set this flag if you are using an uncased model.")
     parser.add_argument("--no_cuda", action='store_true',
                         help="Avoid using CUDA when available") 
     
-    parser.add_argument("--train_batch_size", default=8, type=int,
+    parser.add_argument("--train_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--eval_batch_size", default=8, type=int,
+    parser.add_argument("--eval_batch_size", default=1, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--learning_rate", default=5e-5, type=float,
+    parser.add_argument("--learning_rate", default=5e-6, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--beam_size", default=10, type=int,
+    parser.add_argument("--beam_size", default=4, type=int,
                         help="beam size for beam search")    
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight deay if we apply some.")
@@ -238,7 +282,7 @@ def main():
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=3, type=int,
+    parser.add_argument("--num_train_epochs", default=20, type=int,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
@@ -252,15 +296,11 @@ def main():
                         help="For distributed training: local_rank")   
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
-    parser.add_argument('--num_decoder_layers', type=int, default=6,
-                        help="number of decoder layers")
     parser.add_argument('--linevul_kline', type=int, default=10,
                         help="LineVul ranking")
-
+    
     # print arguments
     args = parser.parse_args()
-    args.max_source_length = 512 # as BERT only cosumes 512
-    args.max_target_length = max_des_length_configs[args.task]
     logger.info(args)
 
     # Setup CUDA, GPU & distributed training
@@ -287,11 +327,14 @@ def main():
     
     #budild model
     encoder = model_class.from_pretrained(args.model_name_or_path,config=config)    
-    decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
-    decoder = nn.TransformerDecoder(decoder_layer, num_layers=args.num_decoder_layers)
-    model=Seq2Seq(encoder=encoder,decoder=decoder,config=config,
-                  beam_size=args.beam_size,max_length=args.max_target_length,
-                  sos_id=tokenizer.cls_token_id,eos_id=tokenizer.sep_token_id)
+    # decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
+    # decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
+    bart_config = BartConfig.from_pretrained("facebook/bart-base")
+    bart_pretrain = BartForConditionalGeneration.from_pretrained("facebook/bart-base", config=bart_config)
+    bart_pretrain.resize_token_embeddings(len(tokenizer))
+    model = Seq2Seq(encoder=encoder, bart_model=bart_pretrain, config=bart_config, config_2=config,
+                    beam_size=args.beam_size, max_length=args.max_target_length,
+                    sos_id=tokenizer.cls_token_id, eos_id=tokenizer.sep_token_id)
     if args.load_model_path is not None:
         logger.info("reload model from {}".format(args.load_model_path))
         model.load_state_dict(torch.load(args.load_model_path))
@@ -310,14 +353,42 @@ def main():
         model = torch.nn.DataParallel(model)
 
     if args.do_train:
+        metric = load_metric("rouge")
+
+        def postprocess_text(preds, labels):
+            preds = [pred.strip() for pred in preds]
+            labels = [label.strip() for label in labels]
+
+            # rougeLSum expects newline after each sentence
+            preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+            labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+
+            return preds, labels
+
+        def compute_metrics(preds, labels):
+            # Some simple post-processing
+            decoded_preds, decoded_labels = postprocess_text(preds, labels)
+
+            result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
+            # Extract a few results from ROUGE
+            result = {key: value.mid.fmeasure * 100 for key, value in result.items()}
+
+            prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
+            result["gen_len"] = np.mean(prediction_lens)
+            result = {k: round(v, 4) for k, v in result.items()}
+            return result
+
         # Prepare training data loader
-        train_examples = read_examples(args.train_filename, args.linevul_kline)
+        train_examples = read_examples_new(args.train_filename, args.linevul_kline)
         train_features = convert_examples_to_features(train_examples, tokenizer,args,stage='train')
         all_source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
         all_source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)
+        all_source_ids_2 = torch.tensor([f.source_ids_2 for f in train_features], dtype=torch.long)
+        all_source_mask_2 = torch.tensor([f.source_mask_2 for f in train_features], dtype=torch.long)
         all_target_ids = torch.tensor([f.target_ids for f in train_features], dtype=torch.long)
         all_target_mask = torch.tensor([f.target_mask for f in train_features], dtype=torch.long)    
-        train_data = TensorDataset(all_source_ids,all_source_mask,all_target_ids,all_target_mask)
+        train_data = TensorDataset(all_source_ids,all_source_mask,all_source_ids_2,all_source_mask_2,
+                                   all_target_ids,all_target_mask)
         
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
@@ -345,17 +416,19 @@ def main():
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num epoch = %d", args.num_train_epochs)
-        
 
         model.train()
         dev_dataset={}
-        nb_tr_examples, nb_tr_steps,tr_loss,global_step,best_bleu,best_loss = 0, 0,0,0,0,1e6 
+        nb_tr_examples, nb_tr_steps,tr_loss,global_step,best_bleu,best_loss = 0, 0,0,0,0,1e6
+        best_rouge = 0
         for epoch in range(args.num_train_epochs):
             bar = tqdm(train_dataloader,total=len(train_dataloader))
             for batch in bar:
                 batch = tuple(t.to(device) for t in batch)
-                source_ids,source_mask,target_ids,target_mask = batch
-                loss,_,_ = model(source_ids=source_ids,source_mask=source_mask,target_ids=target_ids,target_mask=target_mask)
+                source_ids,source_mask,source_ids_2,source_mask_2,target_ids,target_mask = batch
+                loss,_,_ = model(source_ids=source_ids,source_mask=source_mask,
+                                 source_ids_2=source_ids_2,source_mask_2=source_mask_2,
+                                 target_ids=target_ids,target_mask=target_mask)
 
                 if args.n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
@@ -375,6 +448,7 @@ def main():
                     scheduler.step()
                     global_step += 1
 
+
             if args.do_eval:
                 #Eval model with dev dataset
                 tr_loss = 0
@@ -383,13 +457,21 @@ def main():
                 if 'dev_loss' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_loss']
                 else:
-                    eval_examples = read_examples(args.dev_filename, args.linevul_kline)
+                    eval_examples = read_examples_new(args.dev_filename, args.linevul_kline)
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='dev')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
                     all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
+                    all_source_ids_2 = torch.tensor([f.source_ids_2 for f in eval_features], dtype=torch.long)
+                    all_source_mask_2 = torch.tensor([f.source_mask_2 for f in eval_features], dtype=torch.long)
                     all_target_ids = torch.tensor([f.target_ids for f in eval_features], dtype=torch.long)
                     all_target_mask = torch.tensor([f.target_mask for f in eval_features], dtype=torch.long)      
-                    eval_data = TensorDataset(all_source_ids,all_source_mask,all_target_ids,all_target_mask)   
+
+                    print(all_source_ids.shape, all_source_mask.shape)
+                    print(all_source_ids_2.shape, all_source_mask_2.shape)
+                    print(all_target_ids.shape, all_target_mask.shape)
+                    
+                    eval_data = TensorDataset(all_source_ids, all_source_mask, all_source_ids_2, all_source_mask_2,
+                                   all_target_ids,all_target_mask)   
                     dev_dataset['dev_loss']=eval_examples,eval_data
                 eval_sampler = SequentialSampler(eval_data)
                 eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
@@ -403,10 +485,11 @@ def main():
                 eval_loss,tokens_num = 0,0
                 for batch in eval_dataloader:
                     batch = tuple(t.to(device) for t in batch)
-                    source_ids,source_mask,target_ids,target_mask = batch                  
+                    source_ids,source_mask,source_ids_2,source_mask_2,target_ids,target_mask = batch                  
 
                     with torch.no_grad():
                         _,loss,num = model(source_ids=source_ids,source_mask=source_mask,
+                                           source_ids_2=source_ids_2,source_mask_2=source_mask_2,
                                            target_ids=target_ids,target_mask=target_mask)     
                     eval_loss += loss.sum().item()
                     tokens_num += num.sum().item()
@@ -444,12 +527,17 @@ def main():
                 if 'dev_bleu' in dev_dataset:
                     eval_examples,eval_data=dev_dataset['dev_bleu']
                 else:
-                    eval_examples = read_examples(args.dev_filename, args.linevul_kline)
+                    eval_examples = read_examples_new(args.dev_filename, args.linevul_kline)
                     eval_examples = random.sample(eval_examples,min(1000,len(eval_examples)))
                     eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
                     all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
-                    all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)    
-                    eval_data = TensorDataset(all_source_ids,all_source_mask)   
+                    all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
+                    all_source_ids_2 = torch.tensor([f.source_ids_2 for f in eval_features], dtype=torch.long)
+                    all_source_mask_2 = torch.tensor([f.source_mask_2 for f in eval_features], dtype=torch.long)
+                    all_target_ids = torch.tensor([f.target_ids for f in eval_features], dtype=torch.long)
+                    all_target_mask = torch.tensor([f.target_mask for f in eval_features], dtype=torch.long)    
+                    eval_data = TensorDataset(all_source_ids, all_source_mask, all_source_ids_2, all_source_mask_2,
+                                   all_target_ids,all_target_mask)   
                     dev_dataset['dev_bleu']=eval_examples,eval_data
 
 
@@ -461,9 +549,9 @@ def main():
                 p=[]
                 for batch in eval_dataloader:
                     batch = tuple(t.to(device) for t in batch)
-                    source_ids,source_mask= batch                  
+                    source_ids,source_mask,source_ids_2,source_mask_2,target_ids,target_mask = batch                  
                     with torch.no_grad():
-                        preds = model(source_ids=source_ids,source_mask=source_mask)  
+                        preds = model(source_ids=source_ids,source_mask=source_mask,source_ids_2=source_ids_2,source_mask_2=source_mask_2)  
                         for pred in preds:
                             t=pred[0].cpu().numpy()
                             t=list(t)
@@ -494,8 +582,18 @@ def main():
                     model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
                     output_model_file = os.path.join(output_dir, "pytorch_model.bin")
                     torch.save(model_to_save.state_dict(), output_model_file)
-               
+
+        output_dir = os.path.join(args.output_dir, 'checkpoint-best-ppl')
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+        output_model_file = os.path.join(output_dir, "pytorch_model.bin")
+        torch.save(model_to_save.state_dict(), output_model_file)
+
     if args.do_test:
+        # output_dir = os.path.join(args.output_dir, 'checkpoint-best-ppl/pytorch_model.bin')
+        # model.load_state_dict(torch.load(output_dir))
+        # model.to(device)
         files=[]
         if args.dev_filename is not None:
             files.append(args.dev_filename)
@@ -503,11 +601,13 @@ def main():
             files.append(args.test_filename)
         for idx,file in enumerate(files):   
             logger.info("Test file: {}".format(file))
-            eval_examples = read_examples(file, args.linevul_kline)
+            eval_examples = read_examples_new(file, args.linevul_kline)
             eval_features = convert_examples_to_features(eval_examples, tokenizer, args,stage='test')
             all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
-            all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)    
-            eval_data = TensorDataset(all_source_ids,all_source_mask)   
+            all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
+            all_source_ids_2 = torch.tensor([f.source_ids_2 for f in eval_features], dtype=torch.long)
+            all_source_mask_2 = torch.tensor([f.source_mask_2 for f in eval_features], dtype=torch.long)
+            eval_data = TensorDataset(all_source_ids,all_source_mask, all_source_ids_2, all_source_mask_2)
 
             # Calculate bleu
             eval_sampler = SequentialSampler(eval_data)
@@ -517,9 +617,9 @@ def main():
             p=[]
             for batch in tqdm(eval_dataloader,total=len(eval_dataloader)):
                 batch = tuple(t.to(device) for t in batch)
-                source_ids,source_mask= batch                  
+                source_ids,source_mask,source_ids_2,source_mask_2= batch
                 with torch.no_grad():
-                    preds = model(source_ids=source_ids,source_mask=source_mask)  
+                    preds = model(source_ids=source_ids,source_mask=source_mask,source_ids_2=source_ids_2,source_mask_2=source_mask_2)
                     for pred in preds:
                         t=pred[0].cpu().numpy()
                         t=list(t)
@@ -530,9 +630,8 @@ def main():
             model.train()
             predictions=[]
             rouge_pred, rouge_gold = [], []
-            with open(os.path.join(args.output_dir,"test_{}.output".format(str(idx))),'w') as f, \
-                    open(os.path.join(args.output_dir,"test_{}.gold".format(str(idx))),'w') as f1, \
-                    open(os.path.join(args.output_dir,"result_{}.output".format(str(idx))),'w', encoding='utf-8') as f2:
+            with open(os.path.join(args.output_dir,"test_{}.output".format(str(idx))),'w', encoding='utf-8') as f, open(os.path.join(args.output_dir,"test_{}.gold".format(str(idx))),'w', encoding='utf-8') as f1,\
+                open(os.path.join(args.output_dir,"result_{}.output".format(str(idx))),'w', encoding='utf-8') as f2:
                 for ref,gold in zip(p,eval_examples):
                     predictions.append(str(gold.idx)+'\t'+ref)
                     f.write(str(gold.idx)+'\t'+ref+'\n')
@@ -542,15 +641,10 @@ def main():
                 matrix = compute_metrics(rouge_pred, rouge_gold)
                 f2.write(str(matrix))
 
-            (goldMap, predictionMap) = bleu.computeMaps(predictions, os.path.join(args.output_dir, "test_{}.gold".format(idx))) 
-            dev_bleu=round(bleu.bleuFromMaps(goldMap, predictionMap)[0],2)
-            logger.info("  %s = %s "%("bleu-4",str(dev_bleu)))
-            logger.info("  "+"*"*20)    
-
-
-
-                            
-
+            # (goldMap, predictionMap) = bleu.computeMaps(predictions, os.path.join(args.output_dir, "test_{}.gold".format(idx)))
+            # dev_bleu=round(bleu.bleuFromMaps(goldMap, predictionMap)[0],2)
+            # logger.info("  %s = %s "%("bleu-4",str(dev_bleu)))
+            # logger.info("  "+"*"*20)
                 
                 
 if __name__ == "__main__":
