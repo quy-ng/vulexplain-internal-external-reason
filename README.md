@@ -48,3 +48,12 @@ Final data can be download at https://drive.google.com/file/d/1ZxGaSg4L3lGq94SYg
 ```console
 ./run_t5p_percentage.sh
 ```
+# Run ElasticSearch
+```console
+docker run -d --name elasticsearch \
+    -p 0.0.0.0:9200:9200 -p 9300:9300 \
+    -e "discovery.type=single-node" \
+    -e "xpack.security.enabled=false" \
+    -v /data/elasticsearchData/:/usr/share/elasticsearch/data \
+    docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+```
