@@ -40,7 +40,7 @@ do
         --model_name_or_path "neulab/codebert-cpp" \
         --output_dir "results/$TASK/neulab-6layers_linevul10" \
         --beam_size 5 \
-        --train_batch_size  40 \
+        --train_batch_size  50 \
         --eval_batch_size 10 \
         --learning_rate "5e-5" \
         --num_train_epochs 100 \
@@ -57,9 +57,9 @@ do
         --do_lower_case \
         --model_type roberta \
         --model_name_or_path "microsoft/codebert-base" \
-        --output_dir "results/$TASK/base-linevul10" \
+        --output_dir "results/$TASK/codebert-6layers_linevul10" \
         --beam_size 5 \
-        --train_batch_size  40 \
+        --train_batch_size  60 \
         --eval_batch_size 10 \
         --learning_rate "5e-5" \
         --num_train_epochs 100 \
