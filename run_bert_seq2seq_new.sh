@@ -57,7 +57,7 @@ do
         --do_lower_case \
         --model_type roberta \
         --model_name_or_path "microsoft/codebert-base" \
-        --output_dir "results/$TASK/neulab-6layers_linevul10" \
+        --output_dir "results/$TASK/base-linevul10" \
         --beam_size 5 \
         --train_batch_size  40 \
         --eval_batch_size 10 \
