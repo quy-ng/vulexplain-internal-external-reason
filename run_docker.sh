@@ -1,7 +1,10 @@
 #!/bin/bash
 
 
-docker build --build-arg MAMBA_USER_ID=$(id -u) --build-arg MAMBA_USER_GID=$(id -g)  -t vul-intext-reason:ase .
+docker build --build-arg MAMBA_USER_ID=$(id -u) \
+             --build-arg MAMBA_USER_GID=$(id -g) \
+             --build-arg SSH_KEY="$(cat ~/.ssh/id_rsa)" \
+             -t vul-intext-reason:journal .
 docker run --gpus all \
     --env-file .env \
     -it -d -v $PWD:/workspace \
@@ -9,7 +12,7 @@ docker run --gpus all \
     -p 8891:8888 \
     --shm-size=200g --ulimit memlock=-1 --ulimit stack=67108864 \
     --name vul-intext-reason \
-    vul-intext-reason:ase
+    vul-intext-reason:journal
 
 # Wait for the Docker container to start
 sleep 5

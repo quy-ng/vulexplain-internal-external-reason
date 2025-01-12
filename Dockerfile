@@ -22,10 +22,16 @@ COPY --from=micromamba /usr/local/bin/_dockerfile_setup_root_prefix.sh /usr/loca
 RUN /usr/local/bin/_dockerfile_initialize_user_accounts.sh && \
     /usr/local/bin/_dockerfile_setup_root_prefix.sh
 
-RUN apt update && apt install -y git tmux nvtop htop \
+RUN apt update && apt install -y git tmux nvtop htop telnet \
     && apt clean autoremove -y
 
 USER $MAMBA_USER
+
+RUN mkdir -p ~/.ssh && \
+    chmod 0700 ~/.ssh && \
+    ssh-keyscan github.com > ~/.ssh/known_hosts && \
+    echo "${SSH_KEY}" > ~/.ssh/id_rsa && \
+    chmod 600 ~/.ssh/id_rsa
 
 SHELL ["/usr/local/bin/_dockerfile_shell.sh"]
 ENTRYPOINT ["/usr/local/bin/_entrypoint.sh"]
