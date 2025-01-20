@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import numpy as np
 
 load_dotenv()
-RATE_LIMIT = 10
+RATE_LIMIT = 2
 
 rouge = evaluate.load("rouge")
 bleu = evaluate.load("bleu")
@@ -53,6 +53,9 @@ def _load_dataset(task):
 class OutputParser(BaseOutputParser):
     """Parse the output of an LLM call if needed"""
     def parse(self, resp: str):
+        resp = resp.replace('\n', ' ')
+        if len(resp) <= 1:
+            resp = "NILL"
         return resp
 
 
@@ -99,7 +102,10 @@ async def async_llm_call(chain, data, throttler):
 
 @click.command()
 @click.option('--task', help='Task to perform')
-def main(task):
+@click.option('--rate', default=RATE_LIMIT, help='Rate limit')
+def main(task, rate):
+    global RATE_LIMIT
+    RATE_LIMIT = rate
     # Load dataset
     train_ds, test_ds = _load_dataset(task)
 
