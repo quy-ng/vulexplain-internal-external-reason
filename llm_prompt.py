@@ -8,9 +8,10 @@ from langchain.schema import BaseOutputParser
 from project_dataset import load_dataset
 from tqdm.asyncio import tqdm
 from dotenv import load_dotenv
+import numpy as np
 
 load_dotenv()
-RATE_LIMIT = 2
+RATE_LIMIT = 10
 
 rouge = evaluate.load("rouge")
 bleu = evaluate.load("bleu")
