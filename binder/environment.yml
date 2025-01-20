@@ -34,3 +34,14 @@ dependencies:
     - tensorboardX
     - captum
     - accelerate
+    - elasticsearch-dsl[async]
+    - nltk
+    - orjson
+    - sentence-transformers
+    - bert_score
+    - ollama
+    - langchain_community 
+    - langchain
+    - asyncio_throttle
+    - openai
+    - python-dotenv
